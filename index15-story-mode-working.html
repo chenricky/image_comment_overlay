@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Image Comment Board</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #f4f4f4;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    input[type="file"] {
+        margin: 20px;
+        padding: 10px;
+        background: white;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+    }
+
+    .imageWrapper {
+        width: 100%;
+        max-width: 600px;
+        margin: 10px;
+        background: white;
+        border: 1px solid #ccc;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .controls {
+        text-align: center;
+        padding: 10px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    button {
+        padding: 8px 16px;
+        font-size: 14px;
+        background: #007BFF;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin: 5px;
+        transition: background 0.3s ease;
+    }
+
+    button:hover {
+        background: #0056b3;
+    }
+
+    .imageContainer {
+        position: relative;
+        width: 100%;
+    }
+
+    .imageContainer img {
+        width: 100%;
+        display: block; /* removes bottom space/gap */
+    }
+
+    .comment {
+        position: absolute;
+        background: rgba(255, 255, 0, 0.7);
+        padding: 5px;
+        border: 1px solid #333;
+        font-size: 12px;
+        border-radius: 5px;
+        user-select: none;
+        transition: transform 0.3s ease;
+        transform-origin: top left;
+    }
+
+    .delete-btn {
+        display: none;
+        position: absolute;
+        top: 0;
+        right: 0;
+        cursor: pointer;
+        background: red;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        padding: 2px 5px;
+        font-weight: bold;
+    }
+
+    .comment:hover .delete-btn {
+        display: block;
+    }
+
+    .comment-count {
+        font-size: 14px;
+        color: #555;
+    }
+</style>
+</head>
+<body>
+<input type="file" id="imageInput" accept="image/*" multiple>
+<div id="imagesArea"></div>
+<script>
+    const imageInput = document.getElementById('imageInput');
+    const imagesArea = document.getElementById('imagesArea');
+    let storyModeInterval = null;
+
+    imageInput.addEventListener('change', function(event) {
+        Array.from(event.target.files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const imgElement = document.createElement('img');
+                imgElement.src = e.target.result;
+
+                const imageContainer = document.createElement('div');
+                imageContainer.classList.add('imageContainer');
+
+                const controls = document.createElement('div');
+                controls.classList.add('controls');
+
+                const commentCountDisplay = document.createElement('span');
+                commentCountDisplay.className = 'comment-count';
+                commentCountDisplay.textContent = 'Comments: 0';
+
+                const exportBtn = createButton('Export', () =>
+                    exportImageWithComments(imgElement, imageContainer));
+                const dimBtn = createButton('Dim', () =>
+                    imgElement.style.opacity = '0.3');
+                const unDimBtn = createButton('Un-dim', () =>
+                    imgElement.style.opacity = '1');
+                const toggleCommentsBtn = createButton('Hide Comments', function() {
+                    toggleComments(imageContainer, this);
+                });
+                const storyModeBtn = createButton('Story Mode', function() {
+                    toggleStoryMode(imageContainer, this);
+                });
+
+                [exportBtn, dimBtn, unDimBtn, toggleCommentsBtn, storyModeBtn, commentCountDisplay].forEach(btn => controls.appendChild(btn));
+
+                const imageWrapper = document.createElement('div');
+                imageWrapper.classList.add('imageWrapper');
+                imageWrapper.appendChild(controls);
+                imageWrapper.appendChild(imageContainer);
+                imageContainer.appendChild(imgElement);
+                imagesArea.appendChild(imageWrapper);
+
+                imgElement.onload = () => {
+                    setupImageComments(imageContainer, commentCountDisplay);
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+    });
+
+    function createButton(text, onClick) {
+        const button = document.createElement('button');
+        button.textContent = text;
+        button.onclick = onClick;
+        return button;
+    }
+
+    function setupImageComments(imageContainer, commentCountDisplay) {
+        imageContainer.addEventListener('click', function(e) {
+            if (e.target.tagName === 'IMG') {
+                const imgRect = e.target.getBoundingClientRect();
+                const x = (e.clientX - imgRect.left) / imgRect.width;
+                const y = (e.clientY - imgRect.top) / imgRect.height;
+
+                // Highlight location immediately on mouse click
+                highlightLocation(x, y, imageContainer);
+
+                // Delay the comment prompt to allow the highlight to be visible
+                setTimeout(() => {
+                    const comment = prompt("Enter your comment:");
+                    if (comment) {
+                        addComment(x, y, comment, imageContainer, commentCountDisplay);
+                    }
+                }, 500);  // Delay can be adjusted based on the desired highlight duration
+            }
+        });
+    }
+
+    function addComment(x, y, text, container, commentCountDisplay) {
+        const commentDiv = document.createElement('div');
+        commentDiv.classList.add('comment');
+        commentDiv.textContent = text;
+        commentDiv.contentEditable = "true";
+        commentDiv.dataset.x = x;
+        commentDiv.dataset.y = y;
+        positionComment(commentDiv, container.querySelector('img'));
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.classList.add('delete-btn');
+        deleteBtn.textContent = 'X';
+        deleteBtn.onclick = () => {
+            commentDiv.remove();
+            updateCommentCount(container, commentCountDisplay);
+        };
+
+        commentDiv.appendChild(deleteBtn);
+        container.appendChild(commentDiv);
+        updateCommentCount(container, commentCountDisplay);
+    }
+
+    function highlightLocation(x, y, container) {
+        const img = container.querySelector('img');
+        const highlight = document.createElement('div');
+        highlight.style.position = 'absolute';
+        highlight.style.left = `${x * img.clientWidth}px`;
+        highlight.style.top = `${y * img.clientHeight}px`;
+        highlight.style.width = '20px';
+        highlight.style.height = '20px';
+        highlight.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+        highlight.style.borderRadius = '50%';
+        highlight.style.transition = 'opacity 0.5s ease-out';
+        container.appendChild(highlight);
+
+        // Fade out and remove highlight
+        setTimeout(() => {
+            highlight.style.opacity = '0';
+            setTimeout(() => highlight.remove(), 500);
+        }, 500);
+    }  
+
+    function adjustCommentPositions(container, img) {
+        container.querySelectorAll('.comment').forEach(comment => {
+            positionComment(comment, img);
+        });
+    }
+
+    function positionComment(comment, img) {
+        const x = parseFloat(comment.dataset.x) * img.clientWidth;
+        const y = parseFloat(comment.dataset.y) * img.clientHeight;
+        comment.style.left = `${x}px`;
+        comment.style.top = `${y}px`;
+    }
+
+    function toggleComments(container, btn) {
+        const comments = container.querySelectorAll('.comment');
+        const isHidden = btn.textContent.includes('Hide');
+        comments.forEach(comment => {
+            comment.style.visibility = isHidden ? 'hidden' : 'visible';
+        });
+        btn.textContent = isHidden ? 'Display Comments' : 'Hide Comments';
+    }
+
+    function toggleStoryMode(container, btn) {
+        const comments = Array.from(container.querySelectorAll('.comment'));
+        if (btn.textContent === 'Story Mode') {
+            btn.textContent = 'Stop Story';
+            comments.forEach(comment => { comment.style.visibility = 'hidden'; });
+            let index = 0;
+            storyModeInterval = setInterval(() => {
+                if (index < comments.length) {
+                    comments[index].style.visibility = 'visible';
+                    index++;
+                } else {
+                    clearInterval(storyModeInterval); // Stop the interval once all comments are shown
+                    btn.textContent = 'Story Mode'; // Reset the button text
+                }
+            }, 1000);
+        } else {
+            clearInterval(storyModeInterval);
+            btn.textContent = 'Story Mode';
+            comments.forEach(comment => { comment.style.visibility = 'visible'; }); // Ensure all are visible if manually stopped
+        }
+    }
+
+    function updateCommentCount(container, displayElement) {
+        const comments = container.querySelectorAll('.comment');
+        displayElement.textContent = `Comments: ${comments.length}`;
+    }
+
+    function exportImageWithComments(imgElement, imageContainer) {
+        const canvas = document.createElement('canvas');
+        canvas.width = imgElement.clientWidth;
+        canvas.height = imgElement.clientHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+        const comments = imageContainer.querySelectorAll('.comment');
+        comments.forEach(comment => {
+            const rect = comment.getBoundingClientRect();
+            const x = (rect.left - imgElement.getBoundingClientRect().left) * (canvas.width / imgElement.clientWidth);
+            const y = (rect.top - imgElement.getBoundingClientRect().top) * (canvas.height / imgElement.clientHeight);
+            ctx.fillStyle = 'yellow';
+            ctx.fillRect(x, y, comment.clientWidth, comment.clientHeight);
+            ctx.fillStyle = 'black';
+            ctx.font = '16px Arial';
+            ctx.fillText(comment.textContent, x, y + 16);
+        });
+        const dataURL = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = 'exported-image.png';
+        link.href = dataURL;
+        link.click();
+    }
+</script>
+</body>
+</html>
